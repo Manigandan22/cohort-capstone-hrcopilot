@@ -13,6 +13,55 @@ This project provides a working HRMS platform with authentication, employee oper
 It is designed as a practical base for AI feature integration (RAG, assistants, agent workflows) without rebuilding core HR modules from scratch.
 
 
+## PeopleOps AI Copilot (capstone extension)
+
+This fork extends CB Nest with AI features: **Policy RAG**, a **read-only SQL agent**, an
+**HR action agent** that calls the existing APIs, and **role-based access control** for all of them.
+Every AI request is written to the `ai_audit_logs` table.
+
+| Feature | Endpoint | Status |
+|---|---|---|
+| Policy RAG Assistant | `POST /api/v1/chat/policy` | ✅ Done |
+| Policy re-index (admin) | `POST /api/v1/chat/policy/reindex` | ✅ Done |
+| AI audit logging | `ai_audit_logs` table | ✅ Done |
+| Permission matrix | `app/services/ai/permissions.py` | ✅ Done |
+| SQL Agent | `POST /api/v1/chat/sql` | 🚧 Planned |
+| HR Action Agent | `POST /api/v1/chat/actions` | 🚧 Planned |
+| AI Router | `POST /api/v1/chat/router` | 🚧 Planned |
+| Frontend `/ai-copilot` page | — | 🚧 Planned |
+
+- Architecture and design decisions: [`docs/ai_architecture.md`](docs/ai_architecture.md)
+- Permissions matrix: [`docs/ai_permissions_matrix.md`](docs/ai_permissions_matrix.md)
+
+### AI setup
+
+1. Get a free API key from any OpenAI-compatible provider, for example [Groq](https://console.groq.com/keys).
+   You can also run fully locally with [Ollama](https://ollama.com).
+2. In `backend/.env` set `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_KEY` (see `backend/.env.example`).
+3. Start the app, run the migrations and the seed as described in Quick Start below.
+
+The embedding model (`BAAI/bge-small-en-v1.5`, about 130 MB) is downloaded once on first start
+into `backend/storage/ai/models`, and the policy index is built in the background.
+
+Try it:
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8000/api/v1/auth/login -H 'content-type: application/json' \
+  -d '{"email":"employee@mock-hrms.dev","password":"password123"}' | python -c 'import sys,json;print(json.load(sys.stdin)["data"]["access_token"])')
+curl -s -X POST localhost:8000/api/v1/chat/policy -H "Authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' -d '{"message":"How many sick leaves do I get?"}'
+```
+
+### Running the AI tests
+
+The tests need no network or API key: they use an offline embedder and a fake LLM.
+
+```bash
+cd backend
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
 ## Tech Stack
 
 - Frontend: Next.js 15, React 19, Tailwind CSS
@@ -154,6 +203,8 @@ Use `backend/.env.example` as reference. Current key settings:
 - `DATABASE_URL=sqlite+aiosqlite:///./storage/hrms.db`
 - `APP_TIMEZONE=Asia/Kolkata`
 - JWT settings (`JWT_SECRET_KEY`, expiry values)
+- `CORS_ORIGINS`: comma-separated browser origins allowed to call the API
+- AI settings (`LLM_*`, `EMBEDDING_*`, `RAG_*`): see `backend/.env.example`
 
 ## Common Commands
 
