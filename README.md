@@ -52,6 +52,42 @@ curl -s -X POST localhost:8000/api/v1/chat/policy -H "Authorization: Bearer $TOK
   -H 'content-type: application/json' -d '{"message":"How many sick leaves do I get?"}'
 ```
 
+### Running without Docker
+
+Requires **Python 3.11 or 3.12**. Python 3.10 lacks `datetime.UTC`, and 3.14 has no prebuilt
+wheels for the pinned `pydantic-core`. Add these lines to `backend/.env`, because the defaults
+point at Docker paths:
+
+```
+POLICY_UPLOAD_DIR=./storage/hr-policies
+PROFILE_PHOTO_UPLOAD_DIR=./storage/profile-photos
+EMPLOYEE_DOCUMENT_UPLOAD_DIR=./storage/employee-documents
+```
+
+macOS/Linux:
+
+```bash
+cd backend
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+export PYTHONPATH=.
+alembic upgrade head && python scripts/seed.py
+uvicorn app.main:app --reload --port 8000
+```
+
+Windows PowerShell:
+
+```powershell
+cd backend
+py -3.12 -m venv .venv; .venv\Scripts\activate
+pip install -r requirements-dev.txt
+$env:PYTHONPATH = "."
+alembic upgrade head; python scripts/seed.py
+uvicorn app.main:app --reload --port 8000
+```
+
+Frontend: `cd frontend && npm install && npm run dev`.
+
 ### Running the AI tests
 
 The tests need no network or API key: they use an offline embedder and a fake LLM.
