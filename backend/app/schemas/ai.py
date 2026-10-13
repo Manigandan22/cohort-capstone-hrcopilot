@@ -23,3 +23,13 @@ class PolicyIndexStatsOut(BaseModel):
     removed: int
     skipped: int
     chunks: int
+
+
+class SQLChatData(BaseModel):
+    answer: str
+    # Only returned to roles allowed to see raw SQL (managers and admins).
+    sql: str | None = None
+    columns: list[str]
+    rows: list[dict]
+    row_count: int
+    truncated: bool

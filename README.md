@@ -25,7 +25,7 @@ Every AI request is written to the `ai_audit_logs` table.
 | Policy re-index (admin) | `POST /api/v1/chat/policy/reindex` | ✅ Done |
 | AI audit logging | `ai_audit_logs` table | ✅ Done |
 | Permission matrix | `app/services/ai/permissions.py` | ✅ Done |
-| SQL Agent | `POST /api/v1/chat/sql` | 🚧 Planned |
+| SQL Agent (read-only, role-scoped) | `POST /api/v1/chat/sql` | ✅ Done |
 | HR Action Agent | `POST /api/v1/chat/actions` | 🚧 Planned |
 | AI Router | `POST /api/v1/chat/router` | 🚧 Planned |
 | Frontend `/ai-copilot` page | — | 🚧 Planned |

@@ -1,5 +1,7 @@
 import asyncio
 import time
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, status
@@ -9,12 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.response import error_response, success_response
 from app.db.session import get_db
 from app.models.employee import Employee
-from app.schemas.ai import AIChatRequest, PolicyChatData, PolicyIndexStatsOut, PolicySourceOut
+from app.schemas.ai import AIChatRequest, PolicyChatData, PolicyIndexStatsOut, PolicySourceOut, SQLChatData
 from app.schemas.chat import ChatMessageCreate, ChatSessionCreate
 from app.services.ai.audit import AuditEvent, write_audit_log
-from app.services.ai.llm import LLMClient, LLMError, LLMNotConfigured, get_llm_client
-from app.services.ai.permissions import Capability, PermissionDenied, load_user_context
+from app.services.ai.errors import AIRequestError
+from app.services.ai.llm import LLMClient, LLMError, LLMNotConfigured, LLMRateLimited, get_llm_client
+from app.services.ai.permissions import Capability, PermissionDenied, UserContext, load_user_context
 from app.services.ai.policy_rag import PolicyRAGService, get_policy_rag_service
+from app.services.ai.sql_agent import answer_sql_question
 from app.services.auth import get_current_user
 
 router = APIRouter()
@@ -34,8 +38,52 @@ def get_llm() -> LLMClient | None:
         return None
 
 
-def _elapsed_ms(started: float) -> int:
-    return int((time.perf_counter() - started) * 1000)
+def _require_llm(llm: LLMClient | None) -> LLMClient:
+    if llm is None:
+        raise LLMNotConfigured()
+    return llm
+
+
+async def _run_ai_request(
+    db: AsyncSession,
+    user: UserContext,
+    event: AuditEvent,
+    work: Callable[[], Awaitable[dict[str, Any]]],
+):
+    """Run one AI request: map every failure to a safe response and always write one audit row.
+
+    ``work`` returns the response data and may update ``event`` (status, records accessed).
+    """
+    started = time.perf_counter()
+    status_code, code, message = 200, None, None
+    try:
+        data = await work()
+    except PermissionDenied as exc:
+        event.action_status, status_code, code, message = "DENIED", 403, "FORBIDDEN", exc.message
+    except AIRequestError as exc:
+        event.action_status, status_code, code, message = exc.audit_status, exc.status_code, exc.code, exc.message
+    except LLMNotConfigured:
+        event.action_status, status_code, code = "ERROR", 503, "AI_NOT_CONFIGURED"
+        message = "The AI assistant is not configured on this server."
+    except LLMRateLimited:
+        logger.warning("ai_rate_limited", user_id=user.id, intent=event.intent)
+        event.action_status, status_code, code = "ERROR", 429, "AI_RATE_LIMITED"
+        message = "The AI service is busy right now. Please wait a few seconds and try again."
+    except LLMError as exc:
+        logger.warning("ai_upstream_error", user_id=user.id, intent=event.intent, error=str(exc), cause=repr(exc.__cause__)[:300])
+        event.action_status, status_code, code = "ERROR", 502, "AI_UPSTREAM_ERROR"
+        message = "The AI assistant is temporarily unavailable. Please try again."
+    except Exception:  # noqa: BLE001 - never leak internals; always audit
+        logger.exception("ai_request_failed", user_id=user.id, intent=event.intent)
+        event.action_status, status_code, code = "ERROR", 500, "AI_INTERNAL_ERROR"
+        message = "Something went wrong while answering. Please try again."
+
+    event.error_code = code
+    event.latency_ms = int((time.perf_counter() - started) * 1000)
+    await write_audit_log(db, user, event)
+    if code is not None:
+        return JSONResponse(status_code=status_code, content=error_response(code, message or ""))
+    return success_response(data)
 
 
 @router.post("/policy")
@@ -46,56 +94,21 @@ async def chat_policy(
     rag: PolicyRAGService = Depends(get_policy_rag),
     llm: LLMClient | None = Depends(get_llm),
 ):
-    started = time.perf_counter()
     user = await load_user_context(db, current_user)
     event = AuditEvent(message=payload.message, intent="POLICY_QA", agent="policy_rag", tool_name="policy_vector_search")
 
-    try:
+    async def work() -> dict[str, Any]:
         user.require(Capability.POLICY_QA)
-        if llm is None:
-            raise LLMNotConfigured()
-        result = await rag.answer(db, llm, payload.message)
-    except PermissionDenied as exc:
-        event.action_status, event.error_code = "DENIED", "FORBIDDEN"
-        event.latency_ms = _elapsed_ms(started)
-        await write_audit_log(db, user, event)
-        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content=error_response("FORBIDDEN", exc.message))
-    except LLMNotConfigured:
-        event.action_status, event.error_code = "ERROR", "AI_NOT_CONFIGURED"
-        event.latency_ms = _elapsed_ms(started)
-        await write_audit_log(db, user, event)
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content=error_response("AI_NOT_CONFIGURED", "The AI assistant is not configured on this server."),
-        )
-    except LLMError:
-        event.action_status, event.error_code = "ERROR", "AI_UPSTREAM_ERROR"
-        event.latency_ms = _elapsed_ms(started)
-        await write_audit_log(db, user, event)
-        return JSONResponse(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            content=error_response("AI_UPSTREAM_ERROR", "The AI assistant is temporarily unavailable. Please try again."),
-        )
-    except Exception:  # noqa: BLE001 - never leak internals; always audit
-        logger.exception("policy_chat_failed", user_id=user.id)
-        event.action_status, event.error_code = "ERROR", "AI_INTERNAL_ERROR"
-        event.latency_ms = _elapsed_ms(started)
-        await write_audit_log(db, user, event)
-        return JSONResponse(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content=error_response("AI_INTERNAL_ERROR", "Something went wrong while answering. Please try again."),
-        )
+        result = await rag.answer(db, _require_llm(llm), payload.message)
+        event.action_status = "ANSWERED" if result.grounded else "NO_ANSWER"
+        event.records_accessed = result.chunk_ids
+        return PolicyChatData(
+            answer=result.answer,
+            grounded=result.grounded,
+            sources=[PolicySourceOut(title=s.title, category=s.category, filename=s.filename) for s in result.sources],
+        ).model_dump()
 
-    event.action_status = "ANSWERED" if result.grounded else "NO_ANSWER"
-    event.records_accessed = result.chunk_ids
-    event.latency_ms = _elapsed_ms(started)
-    await write_audit_log(db, user, event)
-    data = PolicyChatData(
-        answer=result.answer,
-        grounded=result.grounded,
-        sources=[PolicySourceOut(title=s.title, category=s.category, filename=s.filename) for s in result.sources],
-    )
-    return success_response(data.model_dump())
+    return await _run_ai_request(db, user, event, work)
 
 
 @router.post("/policy/reindex")
@@ -104,22 +117,42 @@ async def reindex_policies(
     db: AsyncSession = Depends(get_db),
     rag: PolicyRAGService = Depends(get_policy_rag),
 ):
-    started = time.perf_counter()
     user = await load_user_context(db, current_user)
     event = AuditEvent(message="[reindex policies]", intent="ADMIN", agent="policy_rag", tool_name="policy_reindex")
-    try:
-        user.require(Capability.REINDEX_POLICIES)
-    except PermissionDenied as exc:
-        event.action_status, event.error_code = "DENIED", "FORBIDDEN"
-        event.latency_ms = _elapsed_ms(started)
-        await write_audit_log(db, user, event)
-        return JSONResponse(status_code=status.HTTP_403_FORBIDDEN, content=error_response("FORBIDDEN", exc.message))
 
-    stats = await rag.sync_index(db, force=True)
-    event.action_status = "SUCCESS"
-    event.latency_ms = _elapsed_ms(started)
-    await write_audit_log(db, user, event)
-    return success_response(PolicyIndexStatsOut(**stats.__dict__).model_dump())
+    async def work() -> dict[str, Any]:
+        user.require(Capability.REINDEX_POLICIES)
+        stats = await rag.sync_index(db, force=True)
+        event.action_status = "SUCCESS"
+        return PolicyIndexStatsOut(**stats.__dict__).model_dump()
+
+    return await _run_ai_request(db, user, event, work)
+
+
+@router.post("/sql")
+async def chat_sql(
+    payload: AIChatRequest,
+    current_user: Employee = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    llm: LLMClient | None = Depends(get_llm),
+):
+    user = await load_user_context(db, current_user)
+    event = AuditEvent(message=payload.message, intent="SQL_QUERY", agent="sql_agent", tool_name="read_only_sql")
+
+    async def work() -> dict[str, Any]:
+        result = await answer_sql_question(_require_llm(llm), user, payload.message)
+        event.action_status = "ANSWERED"
+        event.records_accessed = [f"table:{t}" for t in result.tables] + [f"rows:{len(result.rows)}"]
+        return SQLChatData(
+            answer=result.answer,
+            sql=result.sql if user.can(Capability.VIEW_RAW_SQL) else None,
+            columns=result.columns,
+            rows=result.rows,
+            row_count=len(result.rows),
+            truncated=result.truncated,
+        ).model_dump()
+
+    return await _run_ai_request(db, user, event, work)
 
 
 @router.post("/sessions")

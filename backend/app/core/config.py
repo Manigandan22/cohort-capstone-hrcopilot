@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     llm_model: str = "llama-3.3-70b-versatile"
     llm_temperature: float = 0.0
     llm_timeout_seconds: float = 45.0
+    # Retries (with back-off) on rate limits and transient provider errors.
+    llm_max_retries: int = 3
 
     # Embeddings: "fastembed" runs a local open-source model; "hash" is an offline lexical fallback.
     embedding_backend: str = "fastembed"
@@ -38,6 +40,10 @@ class Settings(BaseSettings):
     # Minimum cosine similarity for a chunk to count as relevant. Empty = embedding backend default.
     rag_min_score: float | None = None
     rag_chunk_chars: int = 900
+    # SQL agent
+    sql_max_rows: int = 100
+    sql_timeout_seconds: float = 5.0
+
     # Load the embedding model and index policies in the background when the API starts.
     ai_warmup_on_startup: bool = True
 

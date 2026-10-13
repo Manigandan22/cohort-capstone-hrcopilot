@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from typing import Any, Protocol
 
-from openai import APIError, APITimeoutError, AsyncOpenAI
+from openai import APIError, APITimeoutError, AsyncOpenAI, RateLimitError
 
 from app.core.config import settings
 
@@ -20,6 +20,10 @@ class LLMNotConfigured(Exception):
 
 class LLMError(Exception):
     """The LLM provider failed or returned something unusable."""
+
+
+class LLMRateLimited(LLMError):
+    """The provider rejected the call because of rate limits (HTTP 429), even after retries."""
 
 
 @dataclass
@@ -68,9 +72,10 @@ def parse_json_object(text: str | None) -> dict[str, Any]:
 
 
 class OpenAICompatibleLLM:
-    def __init__(self, base_url: str, api_key: str, model: str, temperature: float, timeout: float):
+    def __init__(self, base_url: str, api_key: str, model: str, temperature: float, timeout: float, max_retries: int):
         # Local servers such as Ollama ignore the key but the SDK requires a value.
-        self._client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-needed", timeout=timeout, max_retries=1)
+        # The SDK retries 429 and 5xx responses with exponential back-off.
+        self._client = AsyncOpenAI(base_url=base_url, api_key=api_key or "not-needed", timeout=timeout, max_retries=max_retries)
         self._model = model
         self._temperature = temperature
 
@@ -94,6 +99,8 @@ class OpenAICompatibleLLM:
             kwargs["tool_choice"] = "auto"
         try:
             response = await self._client.chat.completions.create(**kwargs)
+        except RateLimitError as exc:
+            raise LLMRateLimited("LLM provider rate limit") from exc
         except (APIError, APITimeoutError) as exc:
             raise LLMError(f"LLM provider error: {type(exc).__name__}") from exc
 
@@ -122,6 +129,7 @@ def _default_llm() -> OpenAICompatibleLLM:
         model=settings.llm_model,
         temperature=settings.llm_temperature,
         timeout=settings.llm_timeout_seconds,
+        max_retries=settings.llm_max_retries,
     )
 
 
