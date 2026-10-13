@@ -1,7 +1,7 @@
 # PeopleOps AI Copilot: Architecture
 
-> Status: Policy RAG, the read-only SQL agent, the permission layer and audit logging are
-> implemented. The action agent, router and frontend are planned and will be documented here.
+> Status: Policy RAG, the read-only SQL agent, the HR action agent, the permission layer and
+> audit logging are implemented. The router and frontend are planned.
 
 ## Request flow
 
@@ -37,8 +37,10 @@ POST /api/v1/chat/policy
 | `app/services/ai/warmup.py` | Loads the model and builds the index when the API starts |
 | `app/services/ai/sql_guardrails.py` | sqlglot-based validation of generated SQL |
 | `app/services/ai/sql_agent.py` | Question screening, role-scoped views, read-only executor, SQL agent |
+| `app/services/ai/api_tools.py` | Typed tools wrapping the existing API routes; `HRApiClient` |
+| `app/services/ai/action_agent.py` | Tool-calling loop, permission enforcement, confirmation store |
 | `app/services/ai/errors.py` | `AIRequestError`: user-facing refusals and failures |
-| `app/api/v1/endpoints/chat.py` | `/chat/policy`, `/chat/policy/reindex`, `/chat/sql`; shared error handling and audit |
+| `app/api/v1/endpoints/chat.py` | `/chat/policy`, `/chat/policy/reindex`, `/chat/sql`, `/chat/actions`, `/chat/actions/confirm`; shared error handling and audit |
 | `app/models/ai_audit_log.py` + migration `0017` | `ai_audit_logs` table |
 
 ## Policy RAG details
@@ -110,6 +112,63 @@ POST /api/v1/chat/sql
 The tests in `tests/test_sql_agent.py` attack layers 4–6 directly, bypassing the validator, to
 prove they hold on their own.
 
+## HR action agent details
+
+```text
+POST /api/v1/chat/actions {message, history?}
+  ├─ screen: "delete all…" → 400, secrets / payroll → 403            (no LLM call)
+  ├─ loop (max AI_MAX_TOOL_STEPS): LLM chooses a tool
+  │     ├─ permission check in code (matrix + manager team scope + no self-approval)
+  │     ├─ arguments validated with Pydantic; errors are fed back to the LLM
+  │     ├─ read tool        → call existing GET route, result back to the LLM (as untrusted data)
+  │     ├─ write tool       → call existing POST route with the USER'S token → deterministic summary
+  │     └─ high-impact tool → no call; return CONFIRMATION_REQUIRED + one-time confirmation_id
+  └─ no tool call → the LLM's answer (or a clarifying question)
+
+POST /api/v1/chat/actions/confirm {confirmation_id, approve}
+  └─ token must belong to the same user and be unused and unexpired (AI_CONFIRMATION_TTL_SECONDS)
+     → permissions re-checked → existing API route called → summary
+```
+
+**Agent → existing API → existing service → database.** Every tool wraps an existing route:
+
+| Tool | Existing route | Who | Confirmation |
+|---|---|---|---|
+| `get_my_leave_balance`, `get_my_leave_requests` | `GET /leaves/balances/me`, `/leaves/requests/me` | Everyone | – |
+| `get_my_tickets` | `GET /tickets?mine=true` | Everyone | – |
+| `search_employees` | `GET /employees?q=` | Everyone | – |
+| `list_pending_leave_requests` | `GET /leaves/requests/pending` (filtered to team) | Manager, Admin | – |
+| `list_open_tickets`, `list_projects` | `GET /tickets`, `GET /employees/projects/catalog` | Manager, Admin | – |
+| `apply_leave` | `POST /leaves/requests` | Everyone | – |
+| `create_ticket` | `POST /tickets` | Everyone | – |
+| `approve_leave`, `reject_leave` | `POST /leaves/requests/{id}/approve` or `/reject` | Manager (team), Admin | ✅ |
+| `assign_ticket`, `update_ticket_status` | `POST /tickets/{id}/assign`, `/status` | Manager, Admin | ✅ |
+| `create_announcement` | `POST /announcements` | Manager, Admin | ✅ |
+| `assign_employee_to_project`, `create_project` | `POST /employees/{id}/projects`, `/employees/projects/catalog` | Manager, Admin | ✅ |
+
+Design points:
+- **Permissions are enforced in code, not by the prompt.**
+  - The model may propose any tool, but nothing runs or gets proposed until the matrix allows it.
+  - So "Approve Rahul's leave" from an employee always returns the same refusal, and is audited as `DENIED`.
+  - The backend's own role checks remain the final gate.
+- **Stricter than the existing API where the matrix requires it.**
+  - Managers can only decide leave for their direct reports.
+  - Nobody can approve their own leave.
+  - Employees cannot change ticket status through the AI, although the existing route allows it.
+- **Write summaries are deterministic**, built from the API response. The LLM never describes a
+  write that did not happen.
+- **In-process API calls by default.**
+  - `HRApiClient` uses httpx's ASGI transport, so the full FastAPI stack runs (routing, JWT
+    dependency, validation, services) without a network hop.
+  - Set `AI_INTERNAL_API_BASE_URL` to use real HTTP instead.
+  - The chat request ends its own read transaction before tool calls, so SQLite's writer lock
+    is free.
+- **Provider quirks are handled.** The provider's assistant message is sent back unchanged in the
+  next turn. Gemini 3 requires its `thought_signature` to be echoed with tool calls.
+- **No direct writes.** `tests/test_action_agent.py::test_ai_layer_never_writes_business_tables_directly`
+  scans the AI package and fails if any module other than the audit log or the vector index writes
+  to a database.
+
 ## Key design decisions
 
 | Decision | Alternative | Why |
@@ -133,6 +192,8 @@ See `backend/.env.example`. The key variables are `LLM_BASE_URL`, `LLM_MODEL`, `
 - Gemini's free tier has small daily quotas (`gemini-3.5-flash`: 20 requests/day). A SQL
   question uses 2 requests (generate + summarize). Use a `flash-lite` model, or another provider
   such as Groq, for development and evaluation. Rate limits return `429 AI_RATE_LIMITED`.
+- Pending confirmations are kept in memory (single API process). A multi-worker deployment would
+  store them in the database or Redis.
 - The keyword blocklist rejects SQLite's `replace()` string function, because `REPLACE` is also a
   write statement. This is an acceptable trade-off for this use case.
 

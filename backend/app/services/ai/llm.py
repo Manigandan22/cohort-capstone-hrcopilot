@@ -37,6 +37,9 @@ class ToolCall:
 class LLMResponse:
     content: str | None
     tool_calls: list[ToolCall] = field(default_factory=list)
+    # The assistant message exactly as the provider returned it. Send it back unchanged in the
+    # next turn: some providers attach required extra fields (e.g. Gemini's thought_signature).
+    raw_message: dict[str, Any] | None = None
 
 
 class LLMClient(Protocol):
@@ -112,7 +115,7 @@ class OpenAICompatibleLLM:
             except json.JSONDecodeError:
                 arguments = {}
             tool_calls.append(ToolCall(id=call.id, name=call.function.name, arguments=arguments))
-        return LLMResponse(content=message.content, tool_calls=tool_calls)
+        return LLMResponse(content=message.content, tool_calls=tool_calls, raw_message=message.model_dump(exclude_none=True))
 
 
 def _is_local_endpoint(base_url: str) -> bool:

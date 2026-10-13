@@ -11,7 +11,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.response import error_response, success_response
 from app.db.session import get_db
 from app.models.employee import Employee
-from app.schemas.ai import AIChatRequest, PolicyChatData, PolicyIndexStatsOut, PolicySourceOut, SQLChatData
+from app.schemas.ai import (
+    ActionChatData,
+    ActionConfirmRequest,
+    AIActionRequest,
+    AIChatRequest,
+    PolicyChatData,
+    PolicyIndexStatsOut,
+    PolicySourceOut,
+    SQLChatData,
+)
+from app.services.ai.action_agent import ActionResult, confirm_pending_action, run_action_agent
 from app.schemas.chat import ChatMessageCreate, ChatSessionCreate
 from app.services.ai.audit import AuditEvent, write_audit_log
 from app.services.ai.errors import AIRequestError
@@ -19,7 +29,7 @@ from app.services.ai.llm import LLMClient, LLMError, LLMNotConfigured, LLMRateLi
 from app.services.ai.permissions import Capability, PermissionDenied, UserContext, load_user_context
 from app.services.ai.policy_rag import PolicyRAGService, get_policy_rag_service
 from app.services.ai.sql_agent import answer_sql_question
-from app.services.auth import get_current_user
+from app.services.auth import get_current_user, oauth2_scheme
 
 router = APIRouter()
 logger = structlog.get_logger(__name__)
@@ -151,6 +161,65 @@ async def chat_sql(
             row_count=len(result.rows),
             truncated=result.truncated,
         ).model_dump()
+
+    return await _run_ai_request(db, user, event, work)
+
+
+def _action_data(result: ActionResult) -> dict[str, Any]:
+    return ActionChatData(
+        status=result.status,
+        answer=result.answer,
+        tool=result.tool,
+        params=result.params,
+        result=result.result,
+        confirmation_id=result.confirmation_id,
+    ).model_dump()
+
+
+@router.post("/actions")
+async def chat_actions(
+    payload: AIActionRequest,
+    access_token: str = Depends(oauth2_scheme),
+    current_user: Employee = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    llm: LLMClient | None = Depends(get_llm),
+):
+    user = await load_user_context(db, current_user)
+    # Release this request's read transaction: the tools call other API routes that write.
+    await db.commit()
+    event = AuditEvent(message=payload.message, intent="HR_ACTION", agent="action_agent")
+
+    async def work() -> dict[str, Any]:
+        result = await run_action_agent(
+            _require_llm(llm), user, db, access_token, payload.message, [t.model_dump() for t in payload.history]
+        )
+        event.action_status = result.status
+        event.tool_name = ",".join(dict.fromkeys(result.tools_called)) or None
+        event.records_accessed = result.records
+        return _action_data(result)
+
+    return await _run_ai_request(db, user, event, work)
+
+
+@router.post("/actions/confirm")
+async def confirm_action(
+    payload: ActionConfirmRequest,
+    access_token: str = Depends(oauth2_scheme),
+    current_user: Employee = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await load_user_context(db, current_user)
+    await db.commit()
+    event = AuditEvent(
+        message=f"[{'confirm' if payload.approve else 'cancel'} action]", intent="HR_ACTION", agent="action_agent"
+    )
+
+    async def work() -> dict[str, Any]:
+        result = await confirm_pending_action(user, db, access_token, payload.confirmation_id, payload.approve)
+        event.action_status = result.status
+        event.tool_name = result.tool
+        event.records_accessed = result.records
+        return _action_data(result)
 
     return await _run_ai_request(db, user, event, work)
 

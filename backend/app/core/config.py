@@ -40,6 +40,11 @@ class Settings(BaseSettings):
     # Minimum cosine similarity for a chunk to count as relevant. Empty = embedding backend default.
     rag_min_score: float | None = None
     rag_chunk_chars: int = 900
+    # HR action agent. Empty = call the existing API in-process; or e.g. http://localhost:8000
+    ai_internal_api_base_url: str = ""
+    ai_max_tool_steps: int = 5
+    ai_confirmation_ttl_seconds: int = 600
+
     # SQL agent
     sql_max_rows: int = 100
     sql_timeout_seconds: float = 5.0
