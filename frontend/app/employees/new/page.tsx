@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense } from "react";
+
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -20,7 +22,7 @@ import {
   updateEmployee,
 } from "@/lib/api";
 
-export default function NewEmployeePage() {
+function NewEmployeePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawEmployeeId = searchParams.get("employee_id");
@@ -533,5 +535,14 @@ export default function NewEmployeePage() {
         </div>
       </section>
     </main>
+  );
+}
+
+// useSearchParams() requires a Suspense boundary for production builds (Next.js 15).
+export default function NewEmployeePage() {
+  return (
+    <Suspense fallback={null}>
+      <NewEmployeePageContent />
+    </Suspense>
   );
 }

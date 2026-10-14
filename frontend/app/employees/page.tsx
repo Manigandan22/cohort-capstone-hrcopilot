@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense } from "react";
+
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Pencil } from "lucide-react";
@@ -31,7 +33,7 @@ const roleClassMap: Record<string, string> = {
   EMPLOYEE: "bg-blue-100 text-blue-700",
 };
 
-export default function EmployeesPage() {
+function EmployeesPageContent() {
   const pageSize = 20;
   const [viewerRole, setViewerRole] = useState<string>("EMPLOYEE");
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -536,5 +538,14 @@ export default function EmployeesPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+// useSearchParams() requires a Suspense boundary for production builds (Next.js 15).
+export default function EmployeesPage() {
+  return (
+    <Suspense fallback={null}>
+      <EmployeesPageContent />
+    </Suspense>
   );
 }

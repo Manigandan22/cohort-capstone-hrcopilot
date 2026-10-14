@@ -221,6 +221,7 @@ async def confirm_action(
 
     async def work() -> dict[str, Any]:
         result = await confirm_pending_action(user, db, access_token, payload.confirmation_id, payload.approve)
+        event.message = f"{'Confirmed' if payload.approve else 'Cancelled'}: {result.answer}"
         event.action_status = result.status
         event.tool_name = result.tool
         event.records_accessed = result.records

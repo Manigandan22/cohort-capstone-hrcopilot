@@ -41,3 +41,4 @@ backend/storage/ai/
 backend/storage/hr-policies/seed_policy_*.md
 **/__pycache__/
 *.pyc
+*.tsbuildinfo

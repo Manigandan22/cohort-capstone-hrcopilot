@@ -29,7 +29,13 @@ Every AI request is written to the `ai_audit_logs` table.
 | HR Action Agent (calls existing APIs, confirmation step) | `POST /api/v1/chat/actions`, `/chat/actions/confirm` | ✅ Done |
 | AI Router (LangGraph) | `POST /api/v1/chat/router` | ✅ Done |
 | My AI history | `GET /api/v1/chat/history` | ✅ Done |
-| Frontend `/ai-copilot` page | — | 🚧 Planned |
+| Frontend AI Copilot page | `/ai-copilot` (sidebar: **AI Copilot**) | ✅ Done |
+
+![Employee using the AI Copilot](docs/screenshots/employee-chat.png)
+
+| Manager: confirmation before a high-impact action | Manager: result, then a data query with SQL |
+|---|---|
+| ![Confirmation](docs/screenshots/manager-confirm.png) | ![Approved and SQL](docs/screenshots/manager-approved-and-sql.png) |
 
 - Architecture and design decisions: [`docs/ai_architecture.md`](docs/ai_architecture.md)
 - Permissions matrix: [`docs/ai_permissions_matrix.md`](docs/ai_permissions_matrix.md)

@@ -1,12 +1,12 @@
 # PeopleOps AI Copilot: Architecture
 
 > Status: Policy RAG, the read-only SQL agent, the HR action agent, the LangGraph router, the
-> permission layer and audit logging are implemented. The frontend is planned.
+> permission layer, audit logging and the `/ai-copilot` frontend are implemented.
 
 ## Request flow
 
 ```text
-Next.js /ai-copilot (planned)
+Next.js /ai-copilot
         │  Authorization: Bearer <JWT>
         ▼
 POST /api/v1/chat/policy
@@ -211,6 +211,36 @@ carries `intent`, `confidence`, `reason`, `routed_by` (`rules` or `llm`) and the
 
 `GET /api/v1/chat/history` returns the caller's own recent AI interactions from the audit log,
 already redacted. It powers "Recent AI Actions" in the UI.
+
+## Frontend (`/ai-copilot`)
+
+| File | Responsibility |
+|---|---|
+| `frontend/app/ai-copilot/page.tsx` | Page shell (existing Sidebar/Topbar), role-aware suggestions, Recent AI Actions |
+| `frontend/components/ai/chat-panel.tsx` | Conversation, router calls, loading/error/refusal states, confirmations |
+| `frontend/components/ai/source-list.tsx` | Policy sources under RAG answers |
+| `frontend/components/ai/sql-result-table.tsx` | Result table, truncation note, "Show SQL" (only when the API returns it) |
+| `frontend/components/ai/action-result-card.tsx` | Confirm/Cancel card for high-impact actions; Done/Cancelled outcome |
+| `frontend/lib/api.ts` | Typed `askCopilot`, `confirmCopilotAction`, `fetchCopilotHistory` |
+
+- **One chat box for everything.** Messages go to `/chat/router`; each answer is labelled by
+  intent (HR Policy, People & Projects, HR Task).
+- **Role-aware, without the UI being a security boundary.**
+  - Suggested prompts match each role, so the UI never invites a refusal.
+  - Raw SQL appears only because the API returns it to managers and admins.
+  - Every check also happens on the backend.
+- **Refusals look like answers, not crashes.** `FORBIDDEN`, `READ_ONLY`, blocked requests and
+  rate limits are shown in amber; real failures in red.
+- **Follow-up questions work.** The last 6 text turns are sent as `history`, so the assistant can
+  continue after asking a clarifying question such as "Which dates?".
+- `/ai-copilot` is protected by the existing auth middleware and linked in the sidebar.
+
+**Existing build blockers fixed.** `next build` failed on the base app before any AI code was
+added, for two reasons:
+- a TypeScript narrowing error in `app/polls/page.tsx`
+- `useSearchParams()` without a `<Suspense>` boundary in four `employees` pages
+
+Both are minimal, behaviour-preserving fixes, needed to deploy the frontend (for example on Vercel).
 
 ## Key design decisions
 
