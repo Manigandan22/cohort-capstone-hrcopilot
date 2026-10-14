@@ -27,7 +27,8 @@ Every AI request is written to the `ai_audit_logs` table.
 | Permission matrix | `app/services/ai/permissions.py` | ✅ Done |
 | SQL Agent (read-only, role-scoped) | `POST /api/v1/chat/sql` | ✅ Done |
 | HR Action Agent (calls existing APIs, confirmation step) | `POST /api/v1/chat/actions`, `/chat/actions/confirm` | ✅ Done |
-| AI Router | `POST /api/v1/chat/router` | 🚧 Planned |
+| AI Router (LangGraph) | `POST /api/v1/chat/router` | ✅ Done |
+| My AI history | `GET /api/v1/chat/history` | ✅ Done |
 | Frontend `/ai-copilot` page | — | 🚧 Planned |
 
 - Architecture and design decisions: [`docs/ai_architecture.md`](docs/ai_architecture.md)

@@ -61,3 +61,23 @@ class ActionChatData(BaseModel):
     params: dict | None = None
     result: Any = None
     confirmation_id: str | None = None
+
+
+class RouterChatData(BaseModel):
+    intent: str
+    confidence: float
+    reason: str
+    # "rules" (deterministic) or "llm"
+    routed_by: str
+    # Same shape as the matching endpoint: PolicyChatData, SQLChatData, ActionChatData, or {"answer"}.
+    result: dict
+
+
+class AIHistoryItem(BaseModel):
+    id: int
+    message: str
+    intent: str | None
+    agent: str | None
+    tool_name: str | None
+    action_status: str
+    created_at: str

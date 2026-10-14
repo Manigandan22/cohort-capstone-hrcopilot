@@ -4,12 +4,14 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.response import error_response, success_response
 from app.db.session import get_db
+from app.models.ai_audit_log import AIAuditLog
 from app.models.employee import Employee
 from app.schemas.ai import (
     ActionChatData,
@@ -18,9 +20,12 @@ from app.schemas.ai import (
     AIChatRequest,
     PolicyChatData,
     PolicyIndexStatsOut,
+    AIHistoryItem,
     PolicySourceOut,
+    RouterChatData,
     SQLChatData,
 )
+from app.services.ai.router import route_message
 from app.services.ai.action_agent import ActionResult, confirm_pending_action, run_action_agent
 from app.schemas.chat import ChatMessageCreate, ChatSessionCreate
 from app.services.ai.audit import AuditEvent, write_audit_log
@@ -222,6 +227,75 @@ async def confirm_action(
         return _action_data(result)
 
     return await _run_ai_request(db, user, event, work)
+
+
+@router.post("/router")
+async def chat_router(
+    payload: AIActionRequest,
+    access_token: str = Depends(oauth2_scheme),
+    current_user: Employee = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    rag: PolicyRAGService = Depends(get_policy_rag),
+    llm: LLMClient | None = Depends(get_llm),
+):
+    """One entry point: classify the message and run the matching agent (LangGraph)."""
+    user = await load_user_context(db, current_user)
+    await db.commit()  # the action agent may call write APIs
+    event = AuditEvent(message=payload.message, intent="ROUTER", agent="router")
+
+    async def work() -> dict[str, Any]:
+        state = await route_message(
+            llm=_require_llm(llm),
+            user=user,
+            db=db,
+            rag=rag,
+            access_token=access_token,
+            message=payload.message,
+            history=[t.model_dump() for t in payload.history],
+        )
+        classification = state["classification"]
+        event.intent = classification.intent
+        event.agent = f"router>{state['agent']}"
+        event.action_status = state["status"]
+        event.tool_name = ",".join(dict.fromkeys(state.get("tools") or [])) or None
+        event.records_accessed = state.get("records") or []
+        return RouterChatData(
+            intent=classification.intent,
+            confidence=classification.confidence,
+            reason=classification.reason,
+            routed_by=classification.method,
+            result=state["data"],
+        ).model_dump()
+
+    return await _run_ai_request(db, user, event, work)
+
+
+@router.get("/history")
+async def chat_history(
+    limit: int = Query(default=20, ge=1, le=100),
+    current_user: Employee = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """The current user's own recent AI interactions (redacted, as stored in the audit log)."""
+    rows = (
+        await db.execute(
+            select(AIAuditLog).where(AIAuditLog.user_id == current_user.id).order_by(AIAuditLog.id.desc()).limit(limit)
+        )
+    ).scalars().all()
+    return success_response(
+        [
+            AIHistoryItem(
+                id=r.id,
+                message=r.message,
+                intent=r.intent,
+                agent=r.agent,
+                tool_name=r.tool_name,
+                action_status=r.action_status,
+                created_at=r.created_at.isoformat() if r.created_at else "",
+            ).model_dump()
+            for r in rows
+        ]
+    )
 
 
 @router.post("/sessions")

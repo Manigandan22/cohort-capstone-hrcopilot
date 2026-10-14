@@ -1,7 +1,7 @@
 # PeopleOps AI Copilot: Architecture
 
-> Status: Policy RAG, the read-only SQL agent, the HR action agent, the permission layer and
-> audit logging are implemented. The router and frontend are planned.
+> Status: Policy RAG, the read-only SQL agent, the HR action agent, the LangGraph router, the
+> permission layer and audit logging are implemented. The frontend is planned.
 
 ## Request flow
 
@@ -39,8 +39,9 @@ POST /api/v1/chat/policy
 | `app/services/ai/sql_agent.py` | Question screening, role-scoped views, read-only executor, SQL agent |
 | `app/services/ai/api_tools.py` | Typed tools wrapping the existing API routes; `HRApiClient` |
 | `app/services/ai/action_agent.py` | Tool-calling loop, permission enforcement, confirmation store |
+| `app/services/ai/router.py` | LangGraph router: rule + LLM intent classification, dispatch to agents |
 | `app/services/ai/errors.py` | `AIRequestError`: user-facing refusals and failures |
-| `app/api/v1/endpoints/chat.py` | `/chat/policy`, `/chat/policy/reindex`, `/chat/sql`, `/chat/actions`, `/chat/actions/confirm`; shared error handling and audit |
+| `app/api/v1/endpoints/chat.py` | `/chat/policy`, `/chat/policy/reindex`, `/chat/sql`, `/chat/actions`, `/chat/actions/confirm`, `/chat/router`, `/chat/history`; shared error handling and audit |
 | `app/models/ai_audit_log.py` + migration `0017` | `ai_audit_logs` table |
 
 ## Policy RAG details
@@ -169,6 +170,48 @@ Design points:
   scans the AI package and fails if any module other than the audit log or the vector index writes
   to a database.
 
+## AI router (LangGraph)
+
+`POST /api/v1/chat/router` is the single entry point used by the chat UI. It is a compiled
+LangGraph `StateGraph`:
+
+```mermaid
+graph TD;
+  start([START]) --> classify
+  classify -. POLICY_QA .-> policy_rag
+  classify -. SQL_QUERY .-> sql_agent
+  classify -. HR_ACTION .-> action_agent
+  classify -. UNKNOWN .-> fallback
+  policy_rag --> done([END])
+  sql_agent --> done
+  action_agent --> done
+  fallback --> done
+```
+
+**Two-stage classification.**
+1. **Deterministic rules** run first, in this order:
+   - injection phrases → refused (400)
+   - SQL text → data agent, which refuses writes
+   - imperative verbs ("Apply…", "Approve…") → actions
+   - sensitive-data requests → data agent, which refuses them
+   - lookup openers ("Who…", "Show…") → data
+   - policy words → policy, but only when no data nouns appear (so "Who is assigned to HR
+     *Policy* Copilot?" is not a policy question)
+2. **The LLM** classifies only messages with no rule match or conflicting signals, returning
+   `{intent, confidence, reason}`. Below 0.5 confidence the message falls back to a help reply.
+
+19 of the brief's 19 example prompts are routed by rules, at zero LLM cost
+(`tests/test_router.py::test_rules_route_brief_prompts`).
+
+The router is not a security boundary. Every agent keeps its own screening and permission checks,
+so a misrouted message still cannot do anything the user is not allowed to do. The response
+carries `intent`, `confidence`, `reason`, `routed_by` (`rules` or `llm`) and the agent's
+`result`. The audit row records the resolved intent and the agent, for example
+`router>action_agent`.
+
+`GET /api/v1/chat/history` returns the caller's own recent AI interactions from the audit log,
+already redacted. It powers "Recent AI Actions" in the UI.
+
 ## Key design decisions
 
 | Decision | Alternative | Why |
@@ -176,6 +219,7 @@ Design points:
 | Local vector store (SQLite + NumPy) | ChromaDB | Chroma pulls in Kubernetes, gRPC and OpenTelemetry and conflicts with the app's pinned pydantic. A few hundred chunks search in microseconds with brute force, and it fits free hosting tiers. |
 | Local open-source embeddings (`bge-small-en-v1.5` via fastembed) | Embedding API | Free, offline, no torch; quality is plenty for a policy library. |
 | One OpenAI-compatible client | Provider SDKs | Switching Groq, Gemini or Ollama is a configuration change only. |
+| Rules first, LLM classifier for ambiguous messages | LLM-only routing | Free, instant and predictable for clear messages; saves quota. |
 | Relevance gate before the LLM | Always call the LLM | Out-of-scope questions are refused deterministically and cost nothing. |
 | Audit write never raises | Fail the request | A logging failure must not break the user's request; it is logged instead. |
 | Role scoping with database views | Asking the LLM to add `WHERE` filters | A prompt can be talked out of a filter; a view cannot. |
