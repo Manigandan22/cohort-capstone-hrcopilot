@@ -64,3 +64,34 @@ def test_chunking_keeps_section_labels_and_respects_size():
     assert all(len(c) <= 400 for c in chunks)
     assert chunks[0].startswith("Leave Policy > 1. Sick leave")
     assert chunks[-1].startswith("Leave Policy > 2. Casual")
+
+
+def test_api_embedder_keeps_input_order_and_waits_out_rate_limits(monkeypatch):
+    import httpx
+    from openai import RateLimitError
+
+    from app.services.ai.embeddings import APIEmbedder
+
+    calls = {"n": 0}
+
+    class FakeItem:
+        def __init__(self, vector):
+            self.embedding = vector
+            self.index = None  # Gemini leaves index empty
+
+    class FakeEmbeddings:
+        def create(self, model, input):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                response = httpx.Response(429, request=httpx.Request("POST", "https://example.invalid"))
+                raise RateLimitError("quota", response=response, body=None)
+            return type("R", (), {"data": [FakeItem([float(len(t)), 1.0]) for t in input]})()
+
+    embedder = APIEmbedder("https://example.invalid/v1", "key", "fake-model", 0.6)
+    embedder._client = type("C", (), {"embeddings": FakeEmbeddings()})()
+    monkeypatch.setattr(APIEmbedder, "RATE_LIMIT_WAIT_SECONDS", 0)
+
+    vectors = embedder.embed_documents(["a", "abcd"])
+    assert calls["n"] == 2  # one 429, then success
+    assert vectors.shape == (2, 2)
+    assert vectors[1][0] > vectors[0][0]  # order preserved: longer text has the larger first component

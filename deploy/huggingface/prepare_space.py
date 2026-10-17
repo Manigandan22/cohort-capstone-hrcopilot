@@ -41,7 +41,7 @@ def main() -> None:
             shutil.copytree(child, destination, ignore=IGNORE)
         else:
             shutil.copy2(child, destination)
-    shutil.copy2(HERE / "Dockerfile", target / "Dockerfile")
+    shutil.copy2(BACKEND / "Dockerfile.prod", target / "Dockerfile")
     shutil.copy2(HERE / "README.md", target / "README.md")
     print(f"Space prepared in {target}. Next: cd {target} && git add -A && git commit -m 'Deploy' && git push")
 

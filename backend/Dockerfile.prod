@@ -1,8 +1,8 @@
-# Backend image for a Hugging Face Docker Space (free CPU tier).
-# Built from the contents of backend/ (see deploy/huggingface/prepare_space.py).
+# Production backend image (Render, Hugging Face Spaces, any Docker host). Build context: backend/.
+# The platform sets $PORT; scripts/start.sh migrates, seeds an empty database and serves on it.
 FROM python:3.11-slim
 
-# Spaces run containers as uid 1000.
+# Non-root user (uid 1000, as Hugging Face Spaces require).
 RUN useradd -m -u 1000 user
 WORKDIR /app
 
@@ -15,7 +15,7 @@ RUN mkdir -p storage/hr-policies storage/profile-photos storage/employee-documen
 
 USER user
 ENV PYTHONPATH=/app \
-    PORT=7860 \
+    PORT=8000 \
     DATABASE_URL=sqlite+aiosqlite:///./storage/hrms.db \
     POLICY_UPLOAD_DIR=/app/storage/hr-policies \
     PROFILE_PHOTO_UPLOAD_DIR=/app/storage/profile-photos \
@@ -24,5 +24,5 @@ ENV PYTHONPATH=/app \
     AI_INDEX_PATH=/app/storage/ai/policy_index.db \
     ACCESS_TOKEN_EXPIRE_MINUTES=60
 
-EXPOSE 7860
+EXPOSE 8000
 CMD ["sh", "scripts/start.sh"]

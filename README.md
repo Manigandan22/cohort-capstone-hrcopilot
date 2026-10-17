@@ -106,7 +106,7 @@ Ollama for fully local use.
 
 On first start the backend downloads the embedding model (about 130 MB) and indexes the HR policies.
 
-**Deploy for free** (Hugging Face Spaces + Vercel, or fully local with Ollama):
+**Deploy for free** (Render + Vercel via `render.yaml`, or fully local with Ollama):
 [`docs/deployment.md`](docs/deployment.md).
 
 ## Documentation
@@ -126,7 +126,7 @@ On first start the backend downloads the embedding model (about 130 MB) and inde
 |---|---|---|
 | `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` | Groq / `llama-3.3-70b-versatile` / empty | Any OpenAI-compatible Chat Completions endpoint |
 | `LLM_MAX_RETRIES`, `LLM_TIMEOUT_SECONDS` | `3`, `45` | Back-off on rate limits and transient errors |
-| `EMBEDDING_BACKEND`, `EMBEDDING_MODEL` | `fastembed`, `BAAI/bge-small-en-v1.5` | Local embeddings (`hash` = offline fallback for tests) |
+| `EMBEDDING_BACKEND`, `EMBEDDING_MODEL` | `fastembed`, `BAAI/bge-small-en-v1.5` | `fastembed` = local open-source model; `api` = OpenAI-compatible embeddings API (e.g. `gemini-embedding-001`, used on Render); `hash` = offline fallback for tests |
 | `RAG_MIN_SCORE`, `RAG_TOP_K` | backend default (0.55 for bge), `5` | Relevance gate and retrieval depth |
 | `SQL_MAX_ROWS`, `SQL_TIMEOUT_SECONDS` | `100`, `5` | SQL agent result cap and query time limit |
 | `AI_MAX_TOOL_STEPS`, `AI_CONFIRMATION_TTL_SECONDS` | `5`, `600` | Action agent loop limit and confirmation expiry |
@@ -141,7 +141,8 @@ On first start the backend downloads the embedding model (about 130 MB) and inde
   workers would need Redis or the database.
 - **The relevance threshold (`RAG_MIN_SCORE`) is tuned for `bge-small`.** Other embedding models
   need re-tuning with the evaluation set.
-- **The free Hugging Face Space has an ephemeral disk**, so demo data resets on restart.
+- **The free Render service sleeps when idle and has an ephemeral disk.** The first request after
+  sleeping takes about 1 minute, and demo data resets on restart.
 - **Router rules are English-only**; other languages fall back to the LLM classifier.
 - **The existing leave-approval API lets any manager approve any request.** The AI layer
   restricts managers to their direct reports; the original route is unchanged.
