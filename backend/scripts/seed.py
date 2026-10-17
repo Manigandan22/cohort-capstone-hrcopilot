@@ -42,6 +42,9 @@ def month_start_n_months_ago(base_month_start: date, months_ago: int) -> date:
 
 
 async def seed():
+    # Every seeded account uses the same demo password. bcrypt is deliberately slow, so hash it once
+    # instead of once per employee (1,003 hashes took about 5 minutes).
+    demo_password_hash = hash_password("password123")
     async with SessionLocal() as session:
         tables = [
             "ai_audit_logs",
@@ -101,7 +104,7 @@ async def seed():
             employee = Employee(
                 name=name,
                 email=email,
-                hashed_password=hash_password("password123"),
+                hashed_password=demo_password_hash,
                 department_id=departments[dept_name].id,
                 role=role,
                 joining_date=date(2022, 1, 1),
@@ -126,7 +129,7 @@ async def seed():
                 Employee(
                     name=fake.name(),
                     email=fake.unique.email(),
-                    hashed_password=hash_password("password123"),
+                    hashed_password=demo_password_hash,
                     department_id=departments[dept_name].id,
                     manager_id=manager_user_id,
                     role=Role.EMPLOYEE,

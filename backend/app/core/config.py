@@ -19,6 +19,8 @@ class Settings(BaseSettings):
 
     # Comma-separated list of browser origins allowed to call the API.
     cors_origins: str = "http://localhost:3000"
+    # Optional regex for extra origins, e.g. Vercel preview URLs: https://.*\.vercel\.app
+    cors_origin_regex: str | None = None
 
     # LLM provider: any OpenAI-compatible Chat Completions API (Groq, Gemini, Ollama, OpenAI, ...).
     llm_base_url: str = "https://api.groq.com/openai/v1"
