@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     embedding_backend: str = "fastembed"
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     embedding_cache_dir: str = "./storage/ai/models"
+    # Only for EMBEDDING_BACKEND=api; empty = reuse the LLM_* endpoint and key.
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
 
     # Policy RAG
     ai_index_path: str = "./storage/ai/policy_index.db"

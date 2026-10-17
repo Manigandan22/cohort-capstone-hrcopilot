@@ -247,7 +247,7 @@ Both are minimal, behaviour-preserving fixes, needed to deploy the frontend (for
 | Decision | Alternative | Why |
 |---|---|---|
 | Local vector store (SQLite + NumPy) | ChromaDB | Chroma pulls in Kubernetes, gRPC and OpenTelemetry and conflicts with the app's pinned pydantic. A few hundred chunks search in microseconds with brute force, and it fits free hosting tiers. |
-| Local open-source embeddings (`bge-small-en-v1.5` via fastembed) | Embedding API | Free, offline, no torch; quality is plenty for a policy library. |
+| Local open-source embeddings (`bge-small-en-v1.5` via fastembed) by default; `api` backend (Gemini `gemini-embedding-001`) for the hosted demo | Embedding API only | Local is free and offline. The 512 MB free host cannot fit ONNX Runtime plus the model alongside the app; with API embeddings the backend uses about 180 MB. Relevance threshold calibrated per backend: Gemini scores 0.73–0.87 for answerable questions vs 0.46–0.49 off-topic, so the default is 0.6. |
 | One OpenAI-compatible client | Provider SDKs | Switching Groq, Gemini or Ollama is a configuration change only. |
 | Rules first, LLM classifier for ambiguous messages | LLM-only routing | Free, instant and predictable for clear messages; saves quota. |
 | Relevance gate before the LLM | Always call the LLM | Out-of-scope questions are refused deterministically and cost nothing. |

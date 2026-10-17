@@ -1,0 +1,32 @@
+# Render Blueprint: free web service for the backend (https://render.com/docs/blueprint-spec).
+# Embeddings use the Gemini API (EMBEDDING_BACKEND=api) so the service fits in the free 512 MB.
+services:
+  - type: web
+    name: cbnest-copilot-api
+    runtime: docker
+    plan: free
+    region: singapore
+    rootDir: backend
+    dockerfilePath: ./Dockerfile.prod
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: LLM_API_KEY
+        sync: false            # set in the Render dashboard; never committed
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: LLM_BASE_URL
+        value: https://generativelanguage.googleapis.com/v1beta/openai/
+      - key: LLM_MODEL
+        value: gemini-3.5-flash-lite
+      - key: EMBEDDING_BACKEND
+        value: api
+      - key: EMBEDDING_MODEL
+        value: gemini-embedding-001
+      - key: CORS_ORIGINS
+        value: https://cbnest-ai-copilot.vercel.app
+      - key: CORS_ORIGIN_REGEX
+        value: https://cbnest-ai-copilot-.*\.vercel\.app
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"

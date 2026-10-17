@@ -1,12 +1,14 @@
 """Text embeddings for policy retrieval.
 
 ``fastembed`` runs an open-source ONNX model (default ``BAAI/bge-small-en-v1.5``) locally, so
-no embedding API or GPU is needed. ``hash`` is a dependency-free lexical fallback used for
+no embedding API or GPU is needed. ``api`` calls an OpenAI-compatible embeddings endpoint
+(e.g. Gemini) for small hosts where loading a local model would not fit in memory. ``hash`` is a dependency-free lexical fallback used for
 offline tests and air-gapped environments; it is far weaker than a real embedding model.
 """
 
 import hashlib
 import re
+import time
 from functools import lru_cache
 from typing import Protocol
 
@@ -48,6 +50,52 @@ class FastEmbedEmbedder:
         return _normalize(np.array(list(self._model.query_embed([text])), dtype=np.float32))[0]
 
 
+class APIEmbedder:
+    """Embeddings from an OpenAI-compatible API (e.g. Gemini ``gemini-embedding-001``).
+
+    Uses almost no memory, which suits small free hosts (Render free tier: 512 MB).
+    """
+
+    BATCH = 32
+    RATE_LIMIT_RETRIES = 4
+    RATE_LIMIT_WAIT_SECONDS = 20
+
+    def __init__(self, base_url: str, api_key: str, model: str, min_score: float):
+        from openai import OpenAI  # The sync client is fine: embedding calls already run in a worker thread.
+
+        self._client = OpenAI(base_url=base_url, api_key=api_key or "not-needed", timeout=60, max_retries=1)
+        self._model = model
+        self.signature = f"api:{base_url}:{model}"
+        self.default_min_score = min_score
+
+    def _embed(self, texts: list[str]) -> np.ndarray:
+        from openai import RateLimitError
+
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self.BATCH):
+            batch = texts[start : start + self.BATCH]
+            # Free tiers count every text as a request (Gemini: 100/minute), so wait out 429s.
+            for attempt in range(self.RATE_LIMIT_RETRIES + 1):
+                try:
+                    response = self._client.embeddings.create(model=self._model, input=batch)
+                    break
+                except RateLimitError:
+                    if attempt == self.RATE_LIMIT_RETRIES:
+                        raise
+                    time.sleep(self.RATE_LIMIT_WAIT_SECONDS)
+            # Results come back in input order (Gemini leaves ``index`` empty, so don't sort by it).
+            vectors.extend(item.embedding for item in response.data)
+        return _normalize(np.array(vectors, dtype=np.float32))
+
+    def embed_documents(self, texts: list[str]) -> np.ndarray:
+        if not texts:
+            return np.zeros((0, 0), dtype=np.float32)
+        return self._embed(texts)
+
+    def embed_query(self, text: str) -> np.ndarray:
+        return self._embed([text])[0]
+
+
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _STOPWORDS = frozenset(
     "a an and are as at be by can do does for from how i in is it many may me my of on or should the "
@@ -86,6 +134,10 @@ class HashingEmbedder:
         return self.embed_documents([text])[0]
 
 
+# Calibrated for gemini-embedding-001 on the seeded policy library (see docs/ai_architecture.md).
+API_EMBEDDING_DEFAULT_MIN_SCORE = 0.6
+
+
 @lru_cache
 def get_embedder() -> Embedder:
     backend = settings.embedding_backend.strip().lower()
@@ -93,4 +145,11 @@ def get_embedder() -> Embedder:
         return HashingEmbedder()
     if backend == "fastembed":
         return FastEmbedEmbedder(settings.embedding_model, settings.embedding_cache_dir)
+    if backend == "api":
+        return APIEmbedder(
+            base_url=settings.embedding_base_url or settings.llm_base_url,
+            api_key=settings.embedding_api_key or settings.llm_api_key,
+            model=settings.embedding_model,
+            min_score=API_EMBEDDING_DEFAULT_MIN_SCORE,
+        )
     raise ValueError(f"Unknown EMBEDDING_BACKEND: {settings.embedding_backend}")
