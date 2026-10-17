@@ -1,5 +1,7 @@
 "use client";
 
+import { Suspense } from "react";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -10,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Employee, fetchEmployees, fetchProfile, uploadEmployeeDocument, uploadEmployeePayslip } from "@/lib/api";
 
-export default function EmployeePayslipsPage() {
+function EmployeePayslipsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [name, setName] = useState("User");
@@ -245,5 +247,14 @@ export default function EmployeePayslipsPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+// useSearchParams() requires a Suspense boundary for production builds (Next.js 15).
+export default function EmployeePayslipsPage() {
+  return (
+    <Suspense fallback={null}>
+      <EmployeePayslipsPageContent />
+    </Suspense>
   );
 }

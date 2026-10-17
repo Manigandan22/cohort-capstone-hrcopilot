@@ -15,6 +15,7 @@ export function middleware(request: NextRequest) {
   const isTicketsRoute = pathname.startsWith("/tickets");
   const isPollsRoute = pathname.startsWith("/polls");
   const isHRPoliciesRoute = pathname.startsWith("/hr-policies");
+  const isAICopilotRoute = pathname.startsWith("/ai-copilot");
   const isLoginRoute = pathname === "/login";
 
   if (
@@ -26,6 +27,7 @@ export function middleware(request: NextRequest) {
       isLeavesRoute ||
       isAnnouncementsRoute ||
       isHRPoliciesRoute ||
+      isAICopilotRoute ||
       isPollsRoute ||
       isTeamCalendarRoute ||
       isTicketsRoute) &&
@@ -52,6 +54,7 @@ export const config = {
     "/leaves/:path*",
     "/announcements/:path*",
     "/hr-policies/:path*",
+    "/ai-copilot/:path*",
     "/polls/:path*",
     "/team-calendar/:path*",
     "/tickets/:path*",

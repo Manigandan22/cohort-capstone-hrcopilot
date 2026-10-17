@@ -1388,3 +1388,87 @@ export async function downloadHRPolicyDocument(
   }
   return { ok: true, status: response.status, body: await response.blob() };
 }
+
+// ---------------------------------------------------------------------------------------------
+// AI Copilot
+// ---------------------------------------------------------------------------------------------
+
+export type AIIntent = "POLICY_QA" | "SQL_QUERY" | "HR_ACTION" | "UNKNOWN";
+
+export type AIPolicySource = { title: string; category: string; filename: string | null };
+
+export type AIPolicyResult = { answer: string; grounded: boolean; sources: AIPolicySource[] };
+
+export type AISqlResult = {
+  answer: string;
+  sql: string | null;
+  columns: string[];
+  rows: Record<string, unknown>[];
+  row_count: number;
+  truncated: boolean;
+};
+
+export type AIActionStatus = "ANSWERED" | "CONFIRMATION_REQUIRED" | "COMPLETED" | "CANCELLED";
+
+export type AIActionResult = {
+  status: AIActionStatus;
+  answer: string;
+  tool: string | null;
+  params: Record<string, unknown> | null;
+  result: unknown;
+  confirmation_id: string | null;
+};
+
+export type AIRouterResult = {
+  intent: AIIntent;
+  confidence: number;
+  reason: string;
+  routed_by: "rules" | "llm";
+  result: AIPolicyResult | AISqlResult | AIActionResult | { answer: string };
+};
+
+export type AIChatTurn = { role: "user" | "assistant"; content: string };
+
+export type AIHistoryItem = {
+  id: number;
+  message: string;
+  intent: string | null;
+  agent: string | null;
+  tool_name: string | null;
+  action_status: string;
+  created_at: string;
+};
+
+export type AIErrorEnvelope = { success: false; data: null; error: { code: string; message: string } };
+
+async function postAI<T>(token: string, path: string, body: unknown): Promise<ApiResult<ApiEnvelope<T> | AIErrorEnvelope>> {
+  const response = await fetch(`${API_BASE}/api/v1/chat/${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  let parsed: ApiEnvelope<T> | AIErrorEnvelope;
+  try {
+    parsed = await response.json();
+  } catch {
+    parsed = { success: false, data: null, error: { code: "BAD_RESPONSE", message: "Unexpected response from the server." } };
+  }
+  return { ok: response.ok, status: response.status, body: parsed };
+}
+
+export function askCopilot(token: string, message: string, history: AIChatTurn[] = []) {
+  return postAI<AIRouterResult>(token, "router", { message, history });
+}
+
+export function confirmCopilotAction(token: string, confirmationId: string, approve: boolean) {
+  return postAI<AIActionResult>(token, "actions/confirm", { confirmation_id: confirmationId, approve });
+}
+
+export async function fetchCopilotHistory(token: string, limit = 15): Promise<ApiResult<ApiEnvelope<AIHistoryItem[]> | { detail?: unknown }>> {
+  const response = await fetch(`${API_BASE}/api/v1/chat/history?limit=${limit}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  return { ok: response.ok, status: response.status, body: await response.json() };
+}

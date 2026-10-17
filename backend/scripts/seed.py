@@ -42,8 +42,12 @@ def month_start_n_months_ago(base_month_start: date, months_ago: int) -> date:
 
 
 async def seed():
+    # Every seeded account uses the same demo password. bcrypt is deliberately slow, so hash it once
+    # instead of once per employee (1,003 hashes took about 5 minutes).
+    demo_password_hash = hash_password("password123")
     async with SessionLocal() as session:
         tables = [
+            "ai_audit_logs",
             "poll_responses",
             "polls",
             "payroll_records",
@@ -100,7 +104,7 @@ async def seed():
             employee = Employee(
                 name=name,
                 email=email,
-                hashed_password=hash_password("password123"),
+                hashed_password=demo_password_hash,
                 department_id=departments[dept_name].id,
                 role=role,
                 joining_date=date(2022, 1, 1),
@@ -125,7 +129,7 @@ async def seed():
                 Employee(
                     name=fake.name(),
                     email=fake.unique.email(),
-                    hashed_password=hash_password("password123"),
+                    hashed_password=demo_password_hash,
                     department_id=departments[dept_name].id,
                     manager_id=manager_user_id,
                     role=Role.EMPLOYEE,
@@ -519,19 +523,34 @@ async def seed():
             ("Separation Policy", "Exit clearance must complete before final settlement is processed."),
             ("Background Verification", "All hires are subject to background verification checks."),
             ("Communication Policy", "Official communication should use company-approved channels."),
+            ("Employee Documents Policy", "Employees can upload and manage their own documents in My Documents."),
         ]
+        # Detailed policy documents used by the AI Policy Assistant (RAG). When a title has a
+        # file here, its full text replaces the one-line summary above.
+        policy_categories = {"Employee Documents Policy": "DOCUMENTS"}
+        detailed_policy_files = {
+            "Leave Policy": "leave_policy.md",
+            "Attendance Policy": "attendance_policy.md",
+            "WFH Policy": "wfh_policy.md",
+            "Employee Documents Policy": "employee_documents_policy.md",
+        }
+        detailed_policy_dir = Path(__file__).resolve().parent.parent / "seed_data" / "policies"
         upload_dir = Path(settings.policy_upload_dir)
         upload_dir.mkdir(parents=True, exist_ok=True)
         for index, (title, content) in enumerate(policies, start=1):
             stored_name = f"seed_policy_{index:02d}.md"
             stored_path = upload_dir / stored_name
-            body = f"# {title}\n\n{content}\n"
+            detailed_file = detailed_policy_files.get(title)
+            if detailed_file:
+                body = (detailed_policy_dir / detailed_file).read_text(encoding="utf-8")
+            else:
+                body = f"# {title}\n\n{content}\n"
             raw = body.encode("utf-8")
             stored_path.write_bytes(raw)
             session.add(
                 HRPolicy(
                     title=title,
-                    category=title.split()[0].upper(),
+                    category=policy_categories.get(title, title.split()[0].upper()),
                     content=None,
                     original_filename=stored_name,
                     file_path=str(stored_path),
