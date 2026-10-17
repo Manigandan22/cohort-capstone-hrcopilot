@@ -8,7 +8,8 @@ look up people and project data, and perform HR tasks. Every answer and action r
 user's role, and every interaction is audited.
 
 > 🎥 **Demo video:** _add your link here (YouTube / Loom / Drive / LinkedIn)_
-> 🌐 **Live demo:** _add your Vercel URL here_ (logins below)
+> 🌐 **Live demo:** <https://cbnest-ai-copilot.vercel.app>, with the API at <https://cbnest-copilot-api.onrender.com/docs> (logins below).
+> It runs on free tiers: the first request after 15 minutes of inactivity wakes the backend (about 1 minute), and demo data resets on restart.
 
 ![Employee using the AI Copilot](docs/screenshots/employee-chat.png)
 
