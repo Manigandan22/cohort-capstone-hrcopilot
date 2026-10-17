@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BookOpen, History, Users, Wrench } from "lucide-react";
 
@@ -58,7 +58,10 @@ export default function AICopilotPage() {
   const [role, setRole] = useState<Role>("EMPLOYEE");
   const [history, setHistory] = useState<AIHistoryItem[]>([]);
 
-  const token = useMemo(() => (typeof window === "undefined" ? null : localStorage.getItem("hrms_access_token")), []);
+  // Read the token after mounting: reading localStorage during render would make the server HTML
+  // (no token) differ from the first client render and cause a hydration error.
+  const [token, setToken] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   const clearAuthAndRedirect = useCallback(() => {
     localStorage.removeItem("hrms_access_token");
@@ -73,6 +76,12 @@ export default function AICopilotPage() {
   }, [token]);
 
   useEffect(() => {
+    setToken(localStorage.getItem("hrms_access_token"));
+    setReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!ready) return;
     if (!token) {
       clearAuthAndRedirect();
       return;
@@ -89,7 +98,7 @@ export default function AICopilotPage() {
       }
       await loadHistory();
     })();
-  }, [token, clearAuthAndRedirect, loadHistory]);
+  }, [ready, token, clearAuthAndRedirect, loadHistory]);
 
   const suggestions = SUGGESTIONS[role] ?? SUGGESTIONS.EMPLOYEE;
   const groups = [
@@ -105,7 +114,13 @@ export default function AICopilotPage() {
         <Topbar name={name} title="AI Copilot" />
         <div className="grid gap-4 p-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
           <div className="min-w-0">
-            {token ? <ChatPanel ref={chatRef} token={token} onActivity={loadHistory} onUnauthorized={clearAuthAndRedirect} /> : null}
+            {token ? (
+              <ChatPanel ref={chatRef} token={token} onActivity={loadHistory} onUnauthorized={clearAuthAndRedirect} />
+            ) : (
+              <div className="flex h-[calc(100vh-11rem)] min-h-[32rem] items-center justify-center rounded-xl border border-border bg-card text-sm text-muted-foreground shadow-sm">
+                Loading…
+              </div>
+            )}
           </div>
 
           <aside className="space-y-4">
