@@ -21,6 +21,7 @@ user's role, and every interaction is audited.
 | **SQL Agent** | LLM-generated SELECT, validated with sqlglot, run read-only on **role-scoped views** with a SQLite authorizer | `POST /api/v1/chat/sql` |
 | **HR Action Agent** | LLM tool calling; every change goes through the **existing APIs with the user's own token**; high-impact actions need confirmation | `POST /api/v1/chat/actions`, `/chat/actions/confirm` |
 | **AI Router (LangGraph)** | Rules first (free, deterministic), LLM classifier for ambiguous messages | `POST /api/v1/chat/router` |
+| **Conversational memory** | Follow-ups ("What about casual leave?", "What skills does that person have?") are rewritten into standalone questions using recent turns | `history` on `/chat/router` |
 | **Role-based access** | One permission matrix enforced in code, plus database-level scoping and the backend's own checks | [permissions matrix](docs/ai_permissions_matrix.md) |
 | **Audit logging** | One redacted row per AI request in `ai_audit_logs`; "Recent AI Actions" in the UI | `GET /api/v1/chat/history` |
 | **Chat UI** | `/ai-copilot` page in the existing Next.js app, role-aware suggestions | sidebar → **AI Copilot** |
@@ -73,7 +74,7 @@ prompt in the brief across all three roles. It was run against the real API with
 
 Reproduce: start the API on a fresh seed, then `cd backend && python scripts/run_ai_eval.py`.
 
-The backend also has **108 automated tests** (offline: fake LLM and offline embedder), including
+The backend also has **117 automated tests** (offline: fake LLM and offline embedder), including
 direct attacks on the SQL sandbox and a scan for direct database writes:
 `cd backend && python -m pytest -q`.
 

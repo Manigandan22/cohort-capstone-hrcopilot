@@ -17,8 +17,9 @@ Request:
 { "message": "Approve Employee User's pending leave request.",
   "history": [ { "role": "user", "content": "..." }, { "role": "assistant", "content": "..." } ] }
 ```
-`history` is optional (at most 10 turns). It lets the assistant follow up on its own clarifying
-questions.
+`history` is optional (at most 10 turns). It gives the assistant conversational memory:
+follow-ups such as "What about casual leave?" are rewritten into standalone questions (see
+`interpreted_as`), and answers to its own clarifying questions complete the pending request.
 
 Response `data`:
 ```json
@@ -26,6 +27,7 @@ Response `data`:
   "confidence": 0.9,
   "reason": "The message asks to perform an HR task.",
   "routed_by": "rules",             // rules | llm
+  "interpreted_as": null,           // standalone rewrite of a follow-up, e.g. "How many casual leaves do I get?"
   "result": { ... }                 // same shape as /policy, /sql or /actions below; UNKNOWN → {"answer"}
 }
 ```

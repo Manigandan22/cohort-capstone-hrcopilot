@@ -69,6 +69,8 @@ class RouterChatData(BaseModel):
     reason: str
     # "rules" (deterministic) or "llm"
     routed_by: str
+    # The standalone question a follow-up was rewritten into (conversational memory); null if unchanged.
+    interpreted_as: str | None = None
     # Same shape as the matching endpoint: PolicyChatData, SQLChatData, ActionChatData, or {"answer"}.
     result: dict
 
