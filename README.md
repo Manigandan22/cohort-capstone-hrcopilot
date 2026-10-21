@@ -58,9 +58,10 @@ Key decisions (details in [`docs/ai_architecture.md`](docs/ai_architecture.md)):
 
 ## Evaluation
 
-A 40-case evaluation set (`backend/eval/ai_eval_cases.json`) covers every example and security
-prompt in the brief across all three roles. It was run against the real API with
-`gemini-3.5-flash-lite`. Full results are in [`docs/ai_eval_results.md`](docs/ai_eval_results.md).
+A 44-case evaluation set (`backend/eval/ai_eval_cases.json`) covers every example and security
+prompt in the brief across all three roles, plus conversational-memory follow-ups. It was run
+**against the live deployment** (Vercel + Render, `gemini-3.5-flash-lite`, Gemini embeddings).
+Full results are in [`docs/ai_eval_results.md`](docs/ai_eval_results.md).
 
 | Category | Passed |
 |---|---|
@@ -69,12 +70,13 @@ prompt in the brief across all three roles. It was run against the real API with
 | Role-based access (no other employee's data; employees cannot approve, assign or announce) | 6/6 |
 | HR actions (completed through existing APIs, confirmation, clarifying questions) | 7/7 |
 | Security prompts (salary, bank, PAN, password, delete, DROP TABLE, prompt injection) | 9/9 |
+| Conversational memory (follow-ups resolved; sensitive follow-ups still refused) | 4/4 |
 | Routing (help reply for out-of-scope messages) | 1/1 |
-| **Total** | **40/40** |
+| **Total** | **44/44** |
 
 Reproduce: start the API on a fresh seed, then `cd backend && python scripts/run_ai_eval.py`.
 
-The backend also has **117 automated tests** (offline: fake LLM and offline embedder), including
+The backend also has **123 automated tests** (offline: fake LLM and offline embedder), including
 direct attacks on the SQL sandbox and a scan for direct database writes:
 `cd backend && python -m pytest -q`.
 

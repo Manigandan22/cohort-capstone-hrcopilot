@@ -597,15 +597,13 @@
       "input": "Approve this leave as an employee user.",
       "expected_behavior": "refuse"
     },
-    "passed": false,
-    "status_code": 200,
-    "route": "HR_ACTION",
-    "routed_by": "rules",
-    "observed": "HR_ACTION: You cannot perform that action because you are logged in with the employee role, and approving leave requires manager or admin permissions.",
-    "latency_ms": 1369,
-    "notes": [
-      "expected a refusal but the request succeeded"
-    ]
+    "passed": true,
+    "status_code": 403,
+    "route": null,
+    "routed_by": null,
+    "observed": "403 FORBIDDEN: You do not have permission to approve or reject leave requests.",
+    "latency_ms": 564,
+    "notes": []
   },
   {
     "case": {
