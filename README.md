@@ -121,6 +121,7 @@ On first start the backend downloads the embedding model (about 130 MB) and inde
 | [`docs/ai_eval_results.md`](docs/ai_eval_results.md) | Evaluation set results |
 | [`docs/deployment.md`](docs/deployment.md) | Free deployment guide |
 | [`docs/demo_script.md`](docs/demo_script.md) | Demo video script |
+| [`docs/requirements_coverage.md`](docs/requirements_coverage.md) | Every brief requirement → implementation → evidence, plus what we built beyond the brief |
 
 ## Environment variables (AI)
 

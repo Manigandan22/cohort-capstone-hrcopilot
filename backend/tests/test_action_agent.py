@@ -182,3 +182,26 @@ def test_ai_layer_never_writes_business_tables_directly():
     allowed = {"audit.py", "vector_store.py"}
     offenders = [path.name for path in ai_dir.glob("*.py") if path.name not in allowed and write_patterns.search(path.read_text())]
     assert offenders == []
+
+
+@pytest.mark.parametrize(
+    "message, refusal",
+    [
+        ("Approve this leave as an employee user.", "You do not have permission to approve or reject leave requests."),
+        ("Please reject Rahul's leave", "You do not have permission to approve or reject leave requests."),
+        ("Create an announcement that Friday's townhall is moved to 5 PM.", "You do not have permission to create announcements."),
+        ("Assign Employee User to HR Policy Copilot as AI Engineer.", "You do not have permission to assign employees to projects."),
+        ("Assign ticket 3 to Wesley", "You do not have permission to assign or update tickets."),
+    ],
+)
+def test_privileged_requests_are_refused_by_role_before_the_llm(client, fake_llm, message, refusal):
+    response = client.post(URL, json={"message": message}, headers=EMPLOYEE)
+    assert response.status_code == 403
+    assert response.json()["error"]["message"] == refusal
+    assert fake_llm.calls == []
+
+
+def test_managers_are_not_blocked_by_the_role_screen(client, fake_llm):
+    fake_llm.replies = [tool("approve_leave", request_id=1)]
+    data = client.post(URL, json={"message": "Approve Employee User's leave"}, headers=MANAGER).json()["data"]
+    assert data["status"] == "CONFIRMATION_REQUIRED"

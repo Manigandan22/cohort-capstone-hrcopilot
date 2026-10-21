@@ -76,6 +76,25 @@ def screen_action_request(message: str) -> None:
         raise AIRequestError(403, "FORBIDDEN", refusal, audit_status="DENIED")
 
 
+# Clear requests for privileged actions, checked against the user's role before the LLM runs, so
+# the refusal never depends on whether the model decides to attempt the tool call.
+_PRIVILEGED_INTENTS: list[tuple[re.Pattern[str], Capability]] = [
+    (re.compile(r"\b(approve|reject|decline)\b", re.IGNORECASE), Capability.DECIDE_LEAVE),
+    (re.compile(r"\b(announce|announcement)\b", re.IGNORECASE), Capability.CREATE_ANNOUNCEMENT),
+    # "Assign X to <project> [as <role>]": in this app "assign" means a project unless a ticket is named.
+    (re.compile(r"^(?!.*\btickets?\b).*\bassign\b.*\bto\b|\bassign\b.*\bprojects?\b", re.IGNORECASE), Capability.ASSIGN_PROJECT),
+    (re.compile(r"\b(create|add|start|new)\b.*\bproject\b", re.IGNORECASE), Capability.ASSIGN_PROJECT),
+    (re.compile(r"\b(assign|reassign)\b.*\btickets?\b|\btickets?\b.*\b(assign|reassign)", re.IGNORECASE), Capability.MANAGE_TICKET),
+]
+
+
+def screen_role_permissions(message: str, user: UserContext) -> None:
+    """Refuse clearly privileged requests the user's role can never perform (no LLM call)."""
+    for pattern, capability in _PRIVILEGED_INTENTS:
+        if pattern.search(message) and not user.can(capability):
+            raise PermissionDenied(capability)
+
+
 # --------------------------------------------------------------------------- pending confirmations
 
 
@@ -174,6 +193,7 @@ async def run_action_agent(
     history: list[dict[str, str]] | None = None,
 ) -> ActionResult:
     screen_action_request(message)
+    screen_role_permissions(message, user)
     today = _today()
     messages: list[dict[str, Any]] = [
         {

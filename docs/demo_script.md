@@ -1,15 +1,17 @@
-# Demo Video Script (7–8 minutes)
+# Demo Video Script (8–9 minutes)
 
 The capstone asks for a 5–10 minute walkthrough that shows all core features and at least one
 complete end-to-end flow. This script covers every evaluation criterion in order. The `>`
 lines are the exact prompts to type; *italics* are narration.
 
 **Before recording**
-- Fresh seed (`python scripts/seed.py`), API and frontend running. On a deployed Space, open the
-  Space URL a few minutes early so it is awake.
+- Live app: <https://cbnest-ai-copilot.vercel.app>. Open
+  <https://cbnest-copilot-api.onrender.com/health> **2–3 minutes before recording** to wake the free
+  backend; a fresh start also gives you fresh demo data. Locally: fresh seed
+  (`python scripts/seed.py`), then start the API and frontend.
 - Browser at 1440×900 or larger, zoom 100%. Use two browser profiles (or one normal and one
   incognito window) so employee and manager can stay logged in side by side.
-- Check `LLM_MODEL` has quota left today: each scene uses 1–3 requests, about 25 for the demo.
+- Check `LLM_MODEL` has quota left today: each scene uses 1–3 requests, about 30 for the demo.
 - Close notifications. Record with OBS, Loom or the Windows Game Bar (Win+Alt+R).
 
 ---
@@ -46,6 +48,15 @@ Log in as **employee@mock-hrms.dev** → **AI Copilot**.
 
 *"That's not in the policy library, so it refuses instead of inventing a rule. If nothing
 relevant is retrieved, the LLM isn't even called."*
+
+**Conversational memory (beyond the brief).** Right after the sick-leave answer:
+
+> What about casual leave?
+
+> and earned?
+
+*"It remembers the conversation. Follow-ups are rewritten into standalone questions, shown here
+as 'Understood as…', and answered from the policy: 12 and 15 days."*
 
 ## 2:45 – 4:00 · SQL agent and role-based data (20% + 20%)
 
@@ -113,13 +124,25 @@ Point at **Recent AI Actions**. Optionally open `ai_audit_logs` in DB Browser fo
 *"Every AI request is logged with user, role, intent, agent, tool, status and records touched,
 with secrets redacted."*
 
-Show `docs/ai_eval_results.md`. *"A 40-case evaluation set covers every prompt in the brief
-across all three roles."* Also show the test summary, e.g. `pytest -q` → "108 passed".
+Show `docs/ai_eval_results.md`. *"A 44-case evaluation set covers every prompt in the brief
+across all three roles, and it was run against the live deployment."* Also show the test summary,
+e.g. `pytest -q` → "117 passed".
 
-## 7:30 – 8:00 · Wrap-up
+## 7:30 – 8:15 · Requirements coverage and beyond the brief
 
-*"Built on free and open-source parts: FastAPI, Next.js, LangGraph, local embeddings and a
-swappable LLM. Repository link and deployment guide are in the README. Thanks for watching."*
+Show `docs/requirements_coverage.md`: scroll the ✅ tables, then section 14, **Beyond the brief**.
+
+*"Every requirement in the brief maps to code and evidence: an evaluation case or an automated
+test. Beyond the brief I added conversational memory, a six-layer SQL sandbox that holds even if
+validation is bypassed, stricter manager scoping than the original app, rules-first routing that
+saves LLM calls, and a live free deployment on Vercel and Render. I also fixed existing build and
+security issues in the base app."*
+
+## 8:15 – 8:45 · Wrap-up
+
+*"Built on free and open-source parts: FastAPI, Next.js, LangGraph, local or API embeddings and a
+swappable LLM. It is live at cbnest-ai-copilot.vercel.app; the repository link, deployment guide
+and evaluation are in the README. Thanks for watching."*
 
 ---
 
@@ -129,5 +152,6 @@ swappable LLM. Repository link and deployment guide are in the README. Thanks fo
 |---|---|---|
 | "The AI service is busy right now" | LLM rate limit or daily quota | Wait a minute, or switch `LLM_MODEL` to another flash-lite model and restart the API |
 | Valid policy question says "couldn't find this" | Relevance threshold too high for your embedding model | Set `RAG_MIN_SCORE=0.45` and restart |
-| "Approve…" finds no pending request | Already approved in an earlier take | Re-seed: `python scripts/seed.py` |
+| "Approve…" finds no pending request | Already approved in an earlier take | Locally: re-seed with `python scripts/seed.py`. Live: restart the Render service (Manual Deploy → Restart), which reseeds |
+| First request takes about 1 minute | Free Render backend was asleep | Open `/health` a few minutes before recording |
 | Logged out mid-demo | Access token expired (15 min locally) | Set `ACCESS_TOKEN_EXPIRE_MINUTES=60` in `backend/.env` |
