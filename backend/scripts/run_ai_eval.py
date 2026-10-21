@@ -55,12 +55,18 @@ def login(client: httpx.Client, role: str) -> str:
     return response.json()["data"]["access_token"]
 
 
-def call_router(client: httpx.Client, token: str, message: str, max_wait: int) -> tuple[int, dict, int]:
+def call_router(
+    client: httpx.Client, token: str, message: str, max_wait: int, history: list[dict] | None = None
+) -> tuple[int, dict, int]:
     """POST to the router, waiting out provider rate limits (HTTP 429) up to max_wait seconds."""
     waited = 0
     while True:
         started = time.perf_counter()
-        response = client.post("/api/v1/chat/router", json={"message": message}, headers={"Authorization": f"Bearer {token}"})
+        response = client.post(
+            "/api/v1/chat/router",
+            json={"message": message, "history": history or []},
+            headers={"Authorization": f"Bearer {token}"},
+        )
         latency = int((time.perf_counter() - started) * 1000)
         if response.status_code != 429 or waited >= max_wait:
             return response.status_code, response.json(), latency
@@ -87,9 +93,15 @@ def evaluate(case: dict, status_code: int, body: dict) -> tuple[bool, str, list[
 
     data = body["data"]
     route, result = data["intent"], data["result"]
+    if case.get("interpreted_contains"):
+        interpreted = (data.get("interpreted_as") or "").lower()
+        if case["interpreted_contains"].lower() not in interpreted:
+            notes.append(f"follow-up not resolved (interpreted_as={data.get('interpreted_as')!r})")
     answer = result.get("answer", "")
     observed = f"{route}: {answer[:140]}"
-    ok = True
+    if data.get("interpreted_as"):
+        observed = f"{route} (understood as: {data['interpreted_as'][:80]}): {answer[:120]}"
+    ok = not notes
     if case.get("expected_route") and route != case["expected_route"]:
         notes.append(f"routed to {route}, expected {case['expected_route']}")
         ok = False
@@ -158,15 +170,14 @@ NOTES = """## Notes
   - **A03:** it ran after A01 had created a second pending leave, so the agent correctly asked *which* request to
     approve. A03 now runs before A01.
   Both cases were then re-run on a fresh seed (`--only S08,A03`) and merged into this report.
-- **Embeddings in this run.** The run happened in a sandbox that cannot download the `bge-small` model, so retrieval
-  used the offline `hash` embedder. Policy cases still passed because the LLM answers only from retrieved excerpts.
-  On a normal machine the default `fastembed` backend is used. Re-run this script there to refresh the numbers.
+- **Conversational memory cases (M01-M04)** send earlier turns as `history`, exactly like the UI. They pass only if
+  the follow-up is resolved (`interpreted_as`) *and* answered correctly. A sensitive follow-up must still be refused.
 - **Side effects.** A01 and A02 create one leave request and one ticket through the existing APIs. All proposed
   high-impact actions (A03-A05) are cancelled automatically.
 """
 
 
-def write_report(outcomes: list[Outcome], model: str, base_url: str) -> None:
+def write_report(outcomes: list[Outcome], model: str, base_url: str, embeddings: str = "see LLM settings") -> None:
     total, passed = len(outcomes), sum(o.passed for o in outcomes)
     by_category: dict[str, list[Outcome]] = defaultdict(list)
     for o in outcomes:
@@ -182,7 +193,7 @@ def write_report(outcomes: list[Outcome], model: str, base_url: str) -> None:
         "# AI Evaluation Results",
         "",
         f"- **Run:** {datetime.now().strftime('%Y-%m-%d %H:%M')} against `{base_url}`",
-        f"- **LLM:** `{model}`; **embeddings:** see notes below",
+        f"- **LLM:** `{model}`; **embeddings:** {embeddings}",
         f"- **Cases:** `backend/eval/ai_eval_cases.json` ({total} cases, 3 roles). "
         "Every example and security prompt from the assignment brief is included.",
         "- **Reproduce:** fresh seed, start the API, then `python scripts/run_ai_eval.py`",
@@ -213,7 +224,7 @@ def write_report(outcomes: list[Outcome], model: str, base_url: str) -> None:
         expected = o.case["expected_behavior"] + (f" ({o.case['expected_route']})" if o.case.get("expected_route") else "")
         observed = (o.observed + ("; " + "; ".join(o.notes) if o.notes else "")).replace("|", "/").replace("\n", " ")
         lines.append(
-            f"| {o.case['id']} | {o.case['role'].title()} | {render_input(o.case['input'])} | {expected} | {observed} | "
+            f"| {o.case['id']} | {o.case['role'].title()} | {'(follow-up) ' if o.case.get('history') else ''}{render_input(o.case['input'])} | {expected} | {observed} | "
             f"{'✅' if o.passed else '❌'} |"
         )
     lines += ["", NOTES]
@@ -228,10 +239,11 @@ def main() -> None:
     parser.add_argument("--model", default="see LLM_MODEL", help="model name to print in the report")
     parser.add_argument("--only", default="", help="comma-separated case ids; results are merged into the last full run")
     parser.add_argument("--report-only", action="store_true", help="rewrite the report from the last saved run")
+    parser.add_argument("--embeddings", default="as configured on the server", help="embedding backend to print in the report")
     args = parser.parse_args()
 
     if args.report_only:
-        write_report([Outcome(**o) for o in json.loads(RAW.read_text(encoding="utf-8"))], args.model, args.base_url)
+        write_report([Outcome(**o) for o in json.loads(RAW.read_text(encoding="utf-8"))], args.model, args.base_url, args.embeddings)
         print(f"Report regenerated from {RAW}")
         return
 
@@ -246,7 +258,9 @@ def main() -> None:
         for index, case in enumerate(cases):
             if index:
                 time.sleep(args.delay)
-            status_code, body, latency = call_router(client, tokens[case["role"]], render_input(case["input"]), args.max_wait)
+            status_code, body, latency = call_router(
+                client, tokens[case["role"]], render_input(case["input"]), args.max_wait, case.get("history")
+            )
             passed, observed, notes = evaluate(case, status_code, body)
             cancel_pending(client, tokens[case["role"]], body)
             data = body.get("data") or {}
@@ -262,7 +276,7 @@ def main() -> None:
         order = [c["id"] for c in json.loads(CASES.read_text(encoding="utf-8"))]
         outcomes = [previous[i] for i in order if i in previous]
     RAW.write_text(json.dumps([o.__dict__ for o in outcomes], indent=2, default=str), encoding="utf-8")
-    write_report(outcomes, args.model, args.base_url)
+    write_report(outcomes, args.model, args.base_url, args.embeddings)
     print(f"\n{sum(o.passed for o in outcomes)}/{len(outcomes)} passed. Report: {REPORT} ({platform.python_version()})")
 
 
