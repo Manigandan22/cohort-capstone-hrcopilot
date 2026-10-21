@@ -163,7 +163,7 @@ contracts, limitations, security decisions, evaluation results) are covered by t
 | Backend API tool calling | 20% | Eval A01–A07; DB-scan test; confirmation flow running the real leave service |
 | Role-based access control | 20% | Eval R01–R03, S08–S10, X01–X09; matrix test |
 | Full-stack integration | 10% | Live app (Vercel → Render), crawl of 17 pages × 3 roles |
-| Code quality and maintainability | 10% | Typed schemas, modular services, 117 tests, consistent error envelope |
+| Code quality and maintainability | 10% | Typed schemas, modular services, 123 tests, consistent error envelope |
 
 ## 12. Minimum passing requirements and automatic-failure conditions
 
@@ -194,7 +194,7 @@ prompts) is a case in the evaluation set.
 | 2. Human-in-the-loop confirmation | ✅ | Approve/reject leave, assign project, create announcement, ticket assign/status, create project. *Deactivate employee* has no tool (see §5). |
 | 3. Streaming chat responses | ❌ | Not implemented; a loading state is shown instead |
 | 4. LangSmith / OpenTelemetry tracing | ❌ | Not implemented; structured logs and audit rows (with latency) instead |
-| 5. Evaluation dataset | ✅ | 44 cases in the brief's `{input, role, expected_route, expected_behavior}` format, with a runner and report |
+| 5. Evaluation dataset | ✅ | 44 cases in the brief's `{input, role, expected_route, expected_behavior}` format, with a runner and report: **44/44 on the live deployment** |
 | 6. Prompt-injection defense | ✅ | Escaped policy excerpts plus a poisoned-document test; injection phrases refused by the router (Eval X05) |
 | 7. Role-specific copilot modes | 🟡 | Role-aware suggestions and "Employee/Manager/Admin copilot" labels; no separate modes |
 | 8. AI usage dashboard | ❌ | Data is in `ai_audit_logs`; no dashboard page |
@@ -218,7 +218,7 @@ Features and engineering that the brief did not ask for:
 | **Pluggable embeddings** (local bge-small / Gemini API / offline hash) with calibrated thresholds | Runs offline locally and within 512 MB in production |
 | **Free deployment, live** | Vercel + Render via `render.yaml`; seed time cut from 5 min to 9 s |
 | **Fixes to the base app** | Production build blockers (Polls type error, missing Suspense), a Next.js security upgrade, and the `.gitignore` that dropped all docs |
-| **117 offline tests and an evaluation run against the live deployment** | Reproducible evidence for every requirement above |
+| **123 offline tests and a 44/44 evaluation run against the live deployment** | Reproducible evidence for every requirement above |
 | **Personal AI history** (`GET /chat/history`, Recent AI Actions panel) | Users can see what the assistant did for them |
 
 ## 15. Known gaps (honest)
