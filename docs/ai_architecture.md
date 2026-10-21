@@ -177,7 +177,8 @@ LangGraph `StateGraph`:
 
 ```mermaid
 graph TD;
-  start([START]) --> classify
+  start([START]) --> contextualize
+  contextualize --> classify
   classify -. POLICY_QA .-> policy_rag
   classify -. SQL_QUERY .-> sql_agent
   classify -. HR_ACTION .-> action_agent
@@ -187,6 +188,24 @@ graph TD;
   action_agent --> done
   fallback --> done
 ```
+
+**Conversational memory (`contextualize` node).** The UI sends the last 6 turns as `history`.
+A follow-up is rewritten into a standalone message with one LLM call, and every later node
+(classification, RAG, SQL, actions) works on that message. Examples from a live run:
+- "What about casual leave?" → "How many casual leaves do I get?"
+- "What skills does that person have?" → "What skills does Admin User have?"
+- "27 to 28 October, sick leave, dental surgery" (after "Which dates…?") → a complete leave request
+
+The rewrite only runs when it is needed:
+- **When it runs:** there is history, and the message refers back ("it", "that", "his",
+  "what about…"), or answers the assistant's question, or is a short message the rules cannot
+  classify.
+- **When it is skipped:** standalone messages cost nothing extra.
+- **Safety:** messages with injection, sensitive-data or destructive wording are never rewritten,
+  so they reach the deterministic refusals unchanged. The rewritten text is screened again.
+- **Failure:** a failed rewrite falls back to the original message.
+- **Visibility:** the response carries `interpreted_as`; the UI shows "Understood as: …", and the
+  audit row records it.
 
 **Two-stage classification.**
 1. **Deterministic rules** run first, in this order:

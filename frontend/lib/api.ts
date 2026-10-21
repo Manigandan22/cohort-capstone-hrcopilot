@@ -1424,6 +1424,8 @@ export type AIRouterResult = {
   confidence: number;
   reason: string;
   routed_by: "rules" | "llm";
+  /** The standalone question a follow-up was rewritten into, if any. */
+  interpreted_as: string | null;
   result: AIPolicyResult | AISqlResult | AIActionResult | { answer: string };
 };
 

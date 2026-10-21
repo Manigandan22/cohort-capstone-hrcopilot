@@ -25,6 +25,7 @@ type ChatMessage = {
   text: string;
   intent?: AIIntent;
   routedBy?: "rules" | "llm";
+  interpretedAs?: string | null;
   result?: AIRouterResult["result"];
   error?: { code: string; message: string };
 };
@@ -84,7 +85,14 @@ export const ChatPanel = forwardRef<
       }
       const body = response.body;
       if (body.success) {
-        append({ role: "assistant", text: body.data.result.answer, intent: body.data.intent, routedBy: body.data.routed_by, result: body.data.result });
+        append({
+          role: "assistant",
+          text: body.data.result.answer,
+          intent: body.data.intent,
+          routedBy: body.data.routed_by,
+          interpretedAs: body.data.interpreted_as,
+          result: body.data.result,
+        });
       } else {
         append({ role: "assistant", text: body.error?.message ?? "Something went wrong.", error: body.error ?? undefined });
       }
@@ -244,6 +252,9 @@ function MessageBubble({
               <Badge className="bg-slate-100 text-slate-600">Not in policy library</Badge>
             ) : null}
           </div>
+        ) : null}
+        {message.interpretedAs ? (
+          <p className="mb-2 text-xs italic text-muted-foreground">Understood as: “{message.interpretedAs}”</p>
         ) : null}
         <p className="whitespace-pre-wrap leading-relaxed">{message.text}</p>
         {result && "sources" in result ? <SourceList sources={(result as AIPolicyResult).sources} /> : null}

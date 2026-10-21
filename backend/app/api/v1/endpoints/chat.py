@@ -260,11 +260,14 @@ async def chat_router(
         event.action_status = state["status"]
         event.tool_name = ",".join(dict.fromkeys(state.get("tools") or [])) or None
         event.records_accessed = state.get("records") or []
+        if state.get("interpreted_as"):
+            event.records_accessed = [f"interpreted_as:{state['interpreted_as'][:200]}", *event.records_accessed]
         return RouterChatData(
             intent=classification.intent,
             confidence=classification.confidence,
             reason=classification.reason,
             routed_by=classification.method,
+            interpreted_as=state.get("interpreted_as"),
             result=state["data"],
         ).model_dump()
 
