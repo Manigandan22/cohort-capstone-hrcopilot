@@ -126,7 +126,7 @@ with secrets redacted."*
 
 Show `docs/ai_eval_results.md`. *"A 44-case evaluation set covers every prompt in the brief
 across all three roles, and it was run against the live deployment."* Also show the test summary,
-e.g. `pytest -q` → "117 passed".
+e.g. `pytest -q` → "123 passed". Point at **44/44** in the summary table.
 
 ## 7:30 – 8:15 · Requirements coverage and beyond the brief
 
